@@ -14,7 +14,6 @@ export function AppLayout({
   mobileSidebarOpen = false,
   onCloseMobileSidebar,
 }: Props) {
-  // Close drawer on Escape
   useEffect(() => {
     if (!mobileSidebarOpen) return;
     function onKey(e: KeyboardEvent) {
@@ -24,7 +23,6 @@ export function AppLayout({
     return () => document.removeEventListener('keydown', onKey);
   }, [mobileSidebarOpen, onCloseMobileSidebar]);
 
-  // Lock body scroll while drawer is open
   useEffect(() => {
     if (mobileSidebarOpen) {
       const prev = document.body.style.overflow;
@@ -37,27 +35,24 @@ export function AppLayout({
 
   return (
     <div className="h-full flex bg-canvas grain">
-      {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-edge bg-surface/50">
         {sidebar}
       </aside>
 
-      {/* Mobile drawer */}
+      {/* @ts-expect-error — inert is typed in React 19; safe in React 18 */}
       <div
+        inert={!mobileSidebarOpen}
         className={`md:hidden fixed inset-0 z-50 transition-opacity duration-200 ${
           mobileSidebarOpen
-            ? 'opacity-100 pointer-events-auto'
-            : 'opacity-0 pointer-events-none'
+            ? 'opacity-100 visible pointer-events-auto'
+            : 'opacity-0 invisible pointer-events-none'
         }`}
-        aria-hidden={!mobileSidebarOpen}
       >
-        {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"
           onClick={onCloseMobileSidebar}
         />
 
-        {/* Slide-in panel */}
         <div
           className={`absolute top-0 left-0 h-full w-72 max-w-[85vw] bg-surface border-r border-edge shadow-2xl transition-transform duration-300 ease-out ${
             mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
