@@ -39,7 +39,6 @@ export function AppLayout({
         {sidebar}
       </aside>
 
-      {/* @ts-expect-error — inert is typed in React 19; safe in React 18 */}
       <div
         inert={!mobileSidebarOpen}
         className={`md:hidden fixed inset-0 z-50 transition-opacity duration-200 ${
