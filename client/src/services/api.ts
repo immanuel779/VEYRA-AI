@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_BASE}/api`,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
 });
@@ -28,7 +30,7 @@ export async function streamChat({
   signal,
   onDelta,
 }: StreamChatOptions): Promise<void> {
-  const res = await fetch('/api/chat', {
+  const res = await fetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

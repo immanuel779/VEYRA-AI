@@ -8,6 +8,7 @@ import { MarkdownMessage } from '../components/chat/MarkdownMessage';
 import { MessageActions } from '../components/chat/MessageActions';
 import { useAuth } from '../context/AuthContext';
 import { usePreferences } from '../context/PreferencesContext';
+import { streamChat } from '../services/api';
 import {
   ArrowUp, Square, Sparkles, Code2, Lightbulb, BookOpen,
 } from 'lucide-react';
@@ -127,10 +128,8 @@ export function ChatPage() {
   }
 
   async function streamResponse(
-    _convId: string,
     history: { role: Role; content: string }[],
-    assistantId: string,
-    assistantMsg: ChatMessage
+    assistantId: string
   ): Promise<string> {
     const controller = new AbortController();
     abortRef.current = controller;
@@ -140,35 +139,18 @@ export function ChatPage() {
       const token = await getToken();
       if (!token) throw new Error('Not authenticated');
 
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
-        }),
+      await streamChat({
+        messages: history.map((m) => ({ role: m.role, content: m.content })),
+        token,
         signal: controller.signal,
+        onDelta: (delta) => {
+          acc += delta;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m))
+          );
+        },
       });
 
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '');
-        throw new Error(errBody || `Request failed (${res.status})`);
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('No response stream');
-
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        acc += decoder.decode(value, { stream: true });
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m))
-        );
-      }
       return acc;
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
@@ -187,7 +169,6 @@ export function ChatPage() {
       }
     } finally {
       abortRef.current = null;
-      void assistantMsg;
     }
   }
 
@@ -227,10 +208,8 @@ export function ChatPage() {
       await addMessage(convId, 'user', trimmed, userMsg.id);
 
       const assistantFinal = await streamResponse(
-        convId,
         next.map((m) => ({ role: m.role, content: m.content })),
-        assistantId,
-        assistantMsg
+        assistantId
       );
 
       if (assistantFinal) {
@@ -262,12 +241,7 @@ export function ChatPage() {
     setStreaming(true);
 
     try {
-      const assistantFinal = await streamResponse(
-        activeId,
-        history,
-        assistantId,
-        lastAssistant
-      );
+      const assistantFinal = await streamResponse(history, assistantId);
       if (assistantFinal) {
         await addMessage(activeId, 'assistant', assistantFinal, assistantId);
       }
