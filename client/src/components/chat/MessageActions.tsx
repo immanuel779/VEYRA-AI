@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Copy, Check, RotateCw, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
   onFeedback?: (type: 'like' | 'dislike' | null) => void;
 }
 
-export function MessageActions({
+export const MessageActions = memo(function MessageActions({
   content,
   feedback,
   canRegenerate,
@@ -61,9 +61,9 @@ export function MessageActions({
       )}
     </div>
   );
-}
+});
 
-function ActionButton({
+const ActionButton = memo(function ActionButton({
   children,
   onClick,
   label,
@@ -88,4 +88,4 @@ function ActionButton({
       {children}
     </button>
   );
-}
+});

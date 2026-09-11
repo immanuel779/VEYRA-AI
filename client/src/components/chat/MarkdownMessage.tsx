@@ -1,3 +1,4 @@
+import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -14,7 +15,6 @@ import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
 import java from 'react-syntax-highlighter/dist/esm/languages/prism/java';
 import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
 import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
-import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -40,7 +40,7 @@ interface Props {
   content: string;
 }
 
-export function MarkdownMessage({ content }: Props) {
+export const MarkdownMessage = memo(function MarkdownMessage({ content }: Props) {
   const { resolved } = useTheme();
   const isDark = resolved === 'dark';
 
@@ -117,9 +117,9 @@ export function MarkdownMessage({ content }: Props) {
       </ReactMarkdown>
     </div>
   );
-}
+});
 
-function CodeBlock({
+const CodeBlock = memo(function CodeBlock({
   language,
   isDark,
   children,
@@ -171,4 +171,4 @@ function CodeBlock({
       </SyntaxHighlighter>
     </div>
   );
-}
+});
