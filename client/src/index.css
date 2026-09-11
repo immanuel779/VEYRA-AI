@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --canvas: 250 249 246;
+    --surface: 255 255 255;
+    --edge: 232 228 220;
+    --ink: 26 24 22;
+    --muted: 118 112 104;
+    --accent: 180 83 9;
+    --accent-soft: 250 240 224;
+    --accent-hover: 154 65 6;
+  }
+
+  .dark {
+    --canvas: 12 12 13;
+    --surface: 20 20 22;
+    --edge: 39 39 43;
+    --ink: 240 238 234;
+    --muted: 150 146 140;
+    --accent: 217 119 6;
+    --accent-soft: 45 34 22;
+    --accent-hover: 245 158 11;
+  }
+
+  html, body, #root {
+    height: 100%;
+  }
+
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    transition: background-color 300ms ease, color 300ms ease;
+  }
+
+  * { -webkit-tap-highlight-color: transparent; }
+
+  ::selection {
+    background-color: rgb(var(--accent) / 0.25);
+    color: rgb(var(--ink));
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--edge));
+    border-radius: 10px;
+    border: 2px solid rgb(var(--canvas));
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--muted) / 0.5); }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  .grain {
+    position: relative;
+  }
+  .grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.022;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+.prose-veyra p { margin-bottom: 0.75rem; }
+.prose-veyra p:last-child { margin-bottom: 0; }
+.prose-veyra pre { margin: 0; }
+.prose-veyra code:not(pre code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
