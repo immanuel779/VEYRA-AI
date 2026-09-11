@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const MAX_MESSAGES = 40;
+const MAX_MESSAGES = 60;
 const MAX_CONTENT = 8000;
 
 export const chatBodySchema = z.object({

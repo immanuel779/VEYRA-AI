@@ -134,13 +134,16 @@ export function ChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Only send the last 30 messages to stay within backend limits
+    const recentHistory = history.slice(-30);
+
     let acc = '';
     try {
       const token = await getToken();
       if (!token) throw new Error('Not authenticated');
 
       await streamChat({
-        messages: history.map((m) => ({ role: m.role, content: m.content })),
+        messages: recentHistory.map((m) => ({ role: m.role, content: m.content })),
         token,
         signal: controller.signal,
         onDelta: (delta) => {
