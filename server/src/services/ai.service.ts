@@ -8,7 +8,7 @@ import {
 
 const groq = new Groq({ apiKey: env.GROQ_API_KEY });
 const MODEL = 'openai/gpt-oss-120b';
-const MAX_TOOL_ITERATIONS = 3;
+const MAX_TOOL_ITERATIONS = 2;
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -126,112 +126,117 @@ export async function streamChat(
   history: ChatTurn[],
   callbacks: StreamCallbacks
 ): Promise<void> {
-  try {
-    const messages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...history.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-    ];
+  const baseMessages: ChatMessage[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...history.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+  ];
 
-    const tools = isSearchConfigured() ? [WEB_SEARCH_TOOL] : undefined;
+  const workingMessages: ChatMessage[] = [...baseMessages];
+  const tools = isSearchConfigured() ? [WEB_SEARCH_TOOL] : undefined;
 
-    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-      const isLastIteration = iteration === MAX_TOOL_ITERATIONS - 1;
-
-      if (isLastIteration) {
-        // Final pass — stream the answer
-        const stream = await groq.chat.completions.create({
+  // ─── Try tool-assisted pass first (wrapped in try/catch) ───
+  if (tools) {
+    try {
+      let iterations = 0;
+      while (iterations < MAX_TOOL_ITERATIONS) {
+        const response = await groq.chat.completions.create({
           model: MODEL,
-          messages: messages as any,
+          messages: workingMessages as any,
+          tools,
+          tool_choice: 'auto',
           temperature: 0.7,
           max_tokens: 2048,
-          stream: true,
+          stream: false,
         });
 
-        for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta?.content || '';
-          if (delta) callbacks.onChunk(delta);
+        const message = response.choices[0]?.message;
+        if (!message) break;
+
+        const toolCalls = (message as any).tool_calls as ToolCall[] | undefined;
+
+        if (!toolCalls || toolCalls.length === 0) {
+          // Model answered directly — emit content and finish
+          if (message.content) {
+            callbacks.onChunk(message.content);
+          }
+          callbacks.onDone();
+          return;
         }
 
-        callbacks.onDone();
-        return;
-      }
-
-      // Non-final passes — check for tool calls
-      const response = await groq.chat.completions.create({
-        model: MODEL,
-        messages: messages as any,
-        tools,
-        tool_choice: tools ? 'auto' : undefined,
-        temperature: 0.7,
-        max_tokens: 2048,
-        stream: false,
-      });
-
-      const message = response.choices[0]?.message;
-      if (!message) {
-        callbacks.onError(new Error('Empty response from model'));
-        return;
-      }
-
-      const toolCalls = (message as any).tool_calls as ToolCall[] | undefined;
-
-      if (!toolCalls || toolCalls.length === 0) {
-        // No tool call — model wants to answer directly.
-        // Push the assistant message and stream a final pass.
-        messages.push({
+        // Push assistant decision with tool_calls
+        workingMessages.push({
           role: 'assistant',
           content: message.content || '',
+          tool_calls: toolCalls,
         });
-        continue;
-      }
 
-      // Record the assistant's tool-call decision
-      messages.push({
-        role: 'assistant',
-        content: message.content || '',
-        tool_calls: toolCalls,
-      });
+        // Execute each tool call
+        for (const toolCall of toolCalls) {
+          if (toolCall.function.name !== 'web_search') continue;
 
-      // Execute each tool call
-      for (const toolCall of toolCalls) {
-        if (toolCall.function.name !== 'web_search') continue;
+          let query = '';
+          try {
+            const args = JSON.parse(toolCall.function.arguments || '{}');
+            query = args.query || '';
+          } catch {
+            query = '';
+          }
 
-        let query = '';
-        try {
-          const args = JSON.parse(toolCall.function.arguments || '{}');
-          query = args.query || '';
-        } catch {
-          query = '';
-        }
+          if (!query) {
+            workingMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: 'Error: no query provided.',
+            });
+            continue;
+          }
 
-        if (!query) {
-          messages.push({
+          callbacks.onStatus?.(`Searching the web for "${query}"...`);
+
+          const searchResponse = await webSearch(query);
+          const formatted = formatSearchResultsForAI(searchResponse);
+
+          workingMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: 'Error: no query provided.',
+            content: formatted,
           });
-          continue;
         }
 
-        callbacks.onStatus?.(`Searching the web for "${query}"...`);
-
-        const searchResponse = await webSearch(query);
-        const formatted = formatSearchResultsForAI(searchResponse);
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          content: formatted,
-        });
+        iterations++;
       }
+    } catch (toolErr) {
+      console.error(
+        '[chat] tool pass failed, falling back to plain chat:',
+        (toolErr as Error).message
+      );
+      // Reset working messages so the fallback has a clean state
+      workingMessages.length = 0;
+      workingMessages.push(...baseMessages);
+    }
+  }
+
+  // ─── Final streaming pass — no tools ───
+  try {
+    const stream = await groq.chat.completions.create({
+      model: MODEL,
+      messages: workingMessages as any,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      if (delta) callbacks.onChunk(delta);
     }
 
-    callbacks.onChunk('\n\n_(Search took too long — answering with what I know.)_');
     callbacks.onDone();
   } catch (err) {
+    console.error('[chat] final stream failed:', err);
     callbacks.onError(err as Error);
   }
 }
