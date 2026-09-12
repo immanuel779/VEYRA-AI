@@ -17,8 +17,22 @@ api.interceptors.response.use(
   }
 );
 
+export interface StreamChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  attachments?: Array<{
+    url: string;
+    type: 'image' | 'file';
+    mime: string;
+    name: string;
+    size?: number;
+    publicId?: string;
+    textContent?: string;
+  }>;
+}
+
 export interface StreamChatOptions {
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  messages: StreamChatMessage[];
   token: string;
   signal?: AbortSignal;
   webSearch?: boolean;
@@ -66,7 +80,6 @@ export async function streamChat({
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // Extract [[STATUS:...]] markers from the stream
     let processed = '';
     while (true) {
       const start = buffer.indexOf('[[STATUS:');
@@ -87,4 +100,40 @@ export async function streamChat({
   }
 
   if (buffer) onDelta(buffer);
+}
+
+export interface ExtractInput {
+  url: string;
+  mime: string;
+  name: string;
+}
+
+export interface ExtractResult {
+  url: string;
+  textContent: string | null;
+  error?: string;
+}
+
+export async function extractFiles(
+  attachments: ExtractInput[],
+  token: string
+): Promise<ExtractResult[]> {
+  if (attachments.length === 0) return [];
+
+  const res = await fetch(`${API_BASE}/api/extract`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ attachments }),
+  });
+
+  if (!res.ok) {
+    console.error('[extract] failed:', res.status);
+    return attachments.map((a) => ({ url: a.url, textContent: null }));
+  }
+
+  const data = await res.json();
+  return data.results || [];
 }

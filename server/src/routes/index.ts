@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { healthCheck } from '../controllers/health.controller';
 import { chatStream } from '../controllers/chat.controller';
+import { extractFiles } from '../controllers/extract.controller';
 import { requireAuth, type AuthedRequest } from '../middleware/auth';
 import { generalLimiter, chatLimiter } from '../middleware/rateLimit';
 import { validateBody } from '../middleware/validate';
@@ -23,5 +24,7 @@ router.post(
   validateBody(chatBodySchema),
   chatStream
 );
+
+router.post('/extract', requireAuth, chatLimiter, extractFiles);
 
 export default router;

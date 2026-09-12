@@ -5,14 +5,27 @@ import {
   formatSearchResultsForAI,
   isSearchConfigured,
 } from './search.service';
+import {
+  analyzeImages,
+  isVisionConfigured,
+  type VisionImage,
+} from './vision.service';
 
 const groq = new Groq({ apiKey: env.GROQ_API_KEY });
 const MODEL = 'openai/gpt-oss-120b';
 const MAX_TOOL_ITERATIONS = 2;
 
+export interface ChatAttachment {
+  url: string;
+  type: 'image' | 'file';
+  mime: string;
+  name: string;
+}
+
 export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
+  attachments?: ChatAttachment[];
 }
 
 export interface StreamCallbacks {
@@ -96,7 +109,7 @@ interface ToolCall {
   };
 }
 
-interface ChatMessage {
+interface GroqMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   tool_calls?: ToolCall[];
@@ -122,22 +135,53 @@ const WEB_SEARCH_TOOL = {
   },
 };
 
-export async function streamChat(
+function inlinFileText(turn: ChatTurn): string {
+  let content = turn.content || '';
+  if (turn.attachments && turn.attachments.length > 0) {
+    const fileSections = turn.attachments
+      .filter((a) => a.type === 'file' && (a as any).textContent)
+      .map(
+        (a) =>
+          `[Attached file: ${a.name}]\n\n${(a as any).textContent}\n\n[End of file: ${a.name}]`
+      );
+    if (fileSections.length > 0) {
+      content = fileSections.join('\n\n') + '\n\n' + content;
+    }
+  }
+  return content;
+}
+
+async function streamViaGemini(
+  history: ChatTurn[],
+  images: VisionImage[],
+  callbacks: StreamCallbacks
+): Promise<void> {
+  const lastUser = [...history].reverse().find((t) => t.role === 'user');
+  const prompt = lastUser?.content || 'Describe this image in detail.';
+
+  await analyzeImages(prompt, images, {
+    onChunk: callbacks.onChunk,
+    onDone: callbacks.onDone,
+    onError: callbacks.onError,
+    onStatus: callbacks.onStatus,
+  });
+}
+
+async function streamViaGroq(
   history: ChatTurn[],
   callbacks: StreamCallbacks
 ): Promise<void> {
-  const baseMessages: ChatMessage[] = [
+  const baseMessages: GroqMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...history.map((m) => ({
       role: m.role as 'user' | 'assistant',
-      content: m.content,
+      content: inlinFileText(m),
     })),
   ];
 
-  const workingMessages: ChatMessage[] = [...baseMessages];
+  const workingMessages: GroqMessage[] = [...baseMessages];
   const tools = isSearchConfigured() ? [WEB_SEARCH_TOOL] : undefined;
 
-  // ─── Try tool-assisted pass first (wrapped in try/catch) ───
   if (tools) {
     try {
       let iterations = 0;
@@ -158,22 +202,17 @@ export async function streamChat(
         const toolCalls = (message as any).tool_calls as ToolCall[] | undefined;
 
         if (!toolCalls || toolCalls.length === 0) {
-          // Model answered directly — emit content and finish
-          if (message.content) {
-            callbacks.onChunk(message.content);
-          }
+          if (message.content) callbacks.onChunk(message.content);
           callbacks.onDone();
           return;
         }
 
-        // Push assistant decision with tool_calls
         workingMessages.push({
           role: 'assistant',
           content: message.content || '',
           tool_calls: toolCalls,
         });
 
-        // Execute each tool call
         for (const toolCall of toolCalls) {
           if (toolCall.function.name !== 'web_search') continue;
 
@@ -213,13 +252,11 @@ export async function streamChat(
         '[chat] tool pass failed, falling back to plain chat:',
         (toolErr as Error).message
       );
-      // Reset working messages so the fallback has a clean state
       workingMessages.length = 0;
       workingMessages.push(...baseMessages);
     }
   }
 
-  // ─── Final streaming pass — no tools ───
   try {
     const stream = await groq.chat.completions.create({
       model: MODEL,
@@ -236,7 +273,27 @@ export async function streamChat(
 
     callbacks.onDone();
   } catch (err) {
-    console.error('[chat] final stream failed:', err);
+    console.error('[chat] groq stream failed:', err);
     callbacks.onError(err as Error);
   }
+}
+
+export async function streamChat(
+  history: ChatTurn[],
+  callbacks: StreamCallbacks
+): Promise<void> {
+  // Detect images in the most recent user turn
+  const lastUser = [...history].reverse().find((t) => t.role === 'user');
+  const images: VisionImage[] =
+    lastUser?.attachments
+      ?.filter((a) => a.type === 'image')
+      .map((a) => ({ url: a.url, mime: a.mime, name: a.name })) || [];
+
+  // Route to Gemini if there are images and vision is configured
+  if (images.length > 0 && isVisionConfigured()) {
+    return streamViaGemini(history, images, callbacks);
+  }
+
+  // Otherwise, use Groq (text + files + web search)
+  return streamViaGroq(history, callbacks);
 }

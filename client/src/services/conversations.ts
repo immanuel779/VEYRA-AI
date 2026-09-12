@@ -13,6 +13,16 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 
+export interface Attachment {
+  url: string;
+  type: 'image' | 'file';
+  name: string;
+  size: number;
+  mime: string;
+  publicId?: string;
+  textContent?: string; // populated in Stage 2 for AI reading
+}
+
 export interface ConversationDoc {
   id: string;
   title: string;
@@ -24,6 +34,7 @@ export interface MessageDoc {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachments?: Attachment[];
   feedback?: 'like' | 'dislike' | null;
   createdAt: Date | null;
 }
@@ -74,6 +85,7 @@ export async function getMessages(conversationId: string): Promise<MessageDoc[]>
       id: d.id,
       role: data.role as 'user' | 'assistant',
       content: (data.content as string) || '',
+      attachments: (data.attachments as Attachment[]) || [],
       feedback: (data.feedback as 'like' | 'dislike' | null) ?? null,
       createdAt: data.createdAt?.toDate?.() ?? null,
     };
@@ -89,11 +101,23 @@ export async function addMessage(
   conversationId: string,
   role: 'user' | 'assistant',
   content: string,
-  localId?: string
+  localId?: string,
+  attachments?: Attachment[]
 ): Promise<string> {
   const coll = collection(db, 'conversations', conversationId, 'messages');
   const ref = localId ? doc(coll, localId) : doc(coll);
-  await setDoc(ref, { role, content, createdAt: serverTimestamp() });
+
+  const payload: Record<string, unknown> = {
+    role,
+    content,
+    createdAt: serverTimestamp(),
+  };
+
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments;
+  }
+
+  await setDoc(ref, payload);
   await updateDoc(doc(db, 'conversations', conversationId), {
     updatedAt: serverTimestamp(),
   });
@@ -137,6 +161,7 @@ export async function deleteConversation(id: string): Promise<void> {
 
 export function deriveTitle(text: string): string {
   const cleaned = text.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return 'New chat';
   if (cleaned.length <= 42) return cleaned;
   return cleaned.slice(0, 42).trim() + '…';
 }
