@@ -12,11 +12,13 @@ import { useAuth } from './AuthContext';
 export interface Preferences {
   enterToSend: boolean;
   showTimestamps: boolean;
+  webSearch: boolean;
 }
 
 const DEFAULTS: Preferences = {
   enterToSend: true,
   showTimestamps: false,
+  webSearch: true,
 };
 
 interface Ctx {

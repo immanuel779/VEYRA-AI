@@ -148,6 +148,12 @@ export function SettingsPage() {
               value={prefs.showTimestamps}
               onChange={(v) => update({ showTimestamps: v })}
             />
+            <Toggle
+              label="Web search"
+              description="Let VEYRA search the web for current information."
+              value={prefs.webSearch}
+              onChange={(v) => update({ webSearch: v })}
+            />
           </div>
         </Section>
 

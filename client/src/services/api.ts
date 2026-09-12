@@ -21,14 +21,18 @@ export interface StreamChatOptions {
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   token: string;
   signal?: AbortSignal;
+  webSearch?: boolean;
   onDelta: (delta: string) => void;
+  onStatus?: (status: string) => void;
 }
 
 export async function streamChat({
   messages,
   token,
   signal,
+  webSearch,
   onDelta,
+  onStatus,
 }: StreamChatOptions): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat`, {
     method: 'POST',
@@ -36,7 +40,7 @@ export async function streamChat({
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, webSearch }),
     signal,
   });
 
@@ -55,14 +59,32 @@ export async function streamChat({
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    if (chunk) onDelta(chunk);
+    buffer += decoder.decode(value, { stream: true });
+
+    // Extract [[STATUS:...]] markers from the stream
+    let processed = '';
+    while (true) {
+      const start = buffer.indexOf('[[STATUS:');
+      if (start === -1) {
+        processed += buffer;
+        buffer = '';
+        break;
+      }
+      processed += buffer.slice(0, start);
+      const end = buffer.indexOf(']]', start);
+      if (end === -1) break;
+      const status = buffer.slice(start + 9, end);
+      onStatus?.(status);
+      buffer = buffer.slice(end + 2);
+    }
+
+    if (processed) onDelta(processed);
   }
 
-  const tail = decoder.decode();
-  if (tail) onDelta(tail);
+  if (buffer) onDelta(buffer);
 }

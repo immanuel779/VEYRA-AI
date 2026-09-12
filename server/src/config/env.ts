@@ -7,10 +7,14 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:5173',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  TAVILY_API_KEY: process.env.TAVILY_API_KEY || '',
   RATE_LIMIT_GENERAL: Number(process.env.RATE_LIMIT_GENERAL) || 120,
   RATE_LIMIT_CHAT: Number(process.env.RATE_LIMIT_CHAT) || 20,
 } as const;
 
 if (!env.GROQ_API_KEY) {
   console.warn('[env] Missing GROQ_API_KEY. Chat will fail.');
+}
+if (!env.TAVILY_API_KEY) {
+  console.warn('[env] Missing TAVILY_API_KEY. Web search will be disabled.');
 }

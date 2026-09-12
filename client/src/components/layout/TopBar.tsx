@@ -1,4 +1,6 @@
-import { Menu, Moon, Sun, LogOut, Settings as SettingsIcon } from 'lucide-react';
+import {
+  Menu, Moon, Sun, LogOut, Settings as SettingsIcon, Download,
+} from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
@@ -8,9 +10,10 @@ import { Logo } from '../ui/Logo';
 
 interface Props {
   onMenuClick?: () => void;
+  onExport?: () => void;
 }
 
-export function TopBar({ onMenuClick }: Props) {
+export function TopBar({ onMenuClick, onExport }: Props) {
   const { resolved, setTheme } = useTheme();
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,6 +64,18 @@ export function TopBar({ onMenuClick }: Props) {
       </div>
 
       <div className="flex items-center gap-1">
+        {onExport && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onExport}
+            aria-label="Export conversation"
+            title="Export conversation"
+          >
+            <Download size={16} />
+          </Button>
+        )}
+
         <Button
           variant="ghost"
           size="sm"

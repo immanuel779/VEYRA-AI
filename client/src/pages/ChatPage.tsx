@@ -8,9 +8,11 @@ import { MarkdownMessage } from '../components/chat/MarkdownMessage';
 import { MessageActions } from '../components/chat/MessageActions';
 import { useAuth } from '../context/AuthContext';
 import { usePreferences } from '../context/PreferencesContext';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { streamChat } from '../services/api';
+import { exportConversation } from '../utils/exportConversation';
 import {
-  ArrowUp, Square, Sparkles, Code2, Lightbulb, BookOpen,
+  ArrowUp, Square, Sparkles, Code2, Lightbulb, BookOpen, Globe, Mic, MicOff,
 } from 'lucide-react';
 import {
   listConversations,
@@ -64,6 +66,8 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<ConversationDoc[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -75,6 +79,24 @@ export function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const skipNextLoadRef = useRef<string | null>(null);
+  const statusTimeoutRef = useRef<number | null>(null);
+  const voiceBaseRef = useRef<string>('');
+
+  const speech = useSpeechRecognition({
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        voiceBaseRef.current = (voiceBaseRef.current + ' ' + text).trim() + ' ';
+        setInput(voiceBaseRef.current);
+      } else {
+        setInput(voiceBaseRef.current + text);
+      }
+      requestAnimationFrame(() => autoResize());
+    },
+    onError: (err) => {
+      setVoiceError(err);
+      window.setTimeout(() => setVoiceError(null), 4000);
+    },
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -127,6 +149,44 @@ export function ChatPage() {
     listConversations(user.uid).then(setConversations).catch(() => {});
   }
 
+  function showStatus(status: string) {
+    setSearchStatus(status);
+    if (statusTimeoutRef.current) {
+      window.clearTimeout(statusTimeoutRef.current);
+    }
+    statusTimeoutRef.current = window.setTimeout(() => {
+      setSearchStatus(null);
+    }, 4000);
+  }
+
+  function handleMicClick() {
+    if (streaming) return;
+    if (!speech.isSupported) {
+      setVoiceError('Voice input is not supported in this browser. Try Chrome or Safari.');
+      window.setTimeout(() => setVoiceError(null), 4000);
+      return;
+    }
+    if (!speech.isListening) {
+      voiceBaseRef.current = input ? input.trim() + ' ' : '';
+    }
+    speech.toggle();
+  }
+
+  function handleExport() {
+    if (!activeId || messages.length === 0) return;
+    const conv = conversations.find((c) => c.id === activeId);
+    const title = conv?.title || 'Conversation';
+    exportConversation(
+      title,
+      messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+      })),
+      'markdown'
+    );
+  }
+
   async function streamResponse(
     history: { role: Role; content: string }[],
     assistantId: string
@@ -134,7 +194,6 @@ export function ChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Only send the last 30 messages to stay within backend limits
     const recentHistory = history.slice(-30);
 
     let acc = '';
@@ -146,11 +205,15 @@ export function ChatPage() {
         messages: recentHistory.map((m) => ({ role: m.role, content: m.content })),
         token,
         signal: controller.signal,
+        webSearch: prefs.webSearch,
         onDelta: (delta) => {
           acc += delta;
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m))
           );
+        },
+        onStatus: (status) => {
+          showStatus(status);
         },
       });
 
@@ -172,12 +235,15 @@ export function ChatPage() {
       }
     } finally {
       abortRef.current = null;
+      setSearchStatus(null);
     }
   }
 
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || streaming || !user) return;
+
+    if (speech.isListening) speech.stop();
 
     const userMsg: ChatMessage = {
       id: uid(),
@@ -196,6 +262,7 @@ export function ChatPage() {
     const next = [...messages, userMsg];
     setMessages([...next, assistantMsg]);
     setInput('');
+    voiceBaseRef.current = '';
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setStreaming(true);
 
@@ -286,9 +353,12 @@ export function ChatPage() {
 
   function handleNewChat() {
     if (streaming) abortRef.current?.abort();
+    if (speech.isListening) speech.stop();
     setActiveId(null);
     setMessages([]);
     setInput('');
+    setSearchStatus(null);
+    voiceBaseRef.current = '';
     textareaRef.current?.focus();
   }
 
@@ -324,6 +394,9 @@ export function ChatPage() {
     return last?.role === 'assistant' ? last.id : null;
   })();
 
+  const micDisabled = streaming;
+  const canExport = !!activeId && messages.length > 0 && !streaming;
+
   return (
     <AppLayout
       mobileSidebarOpen={mobileSidebarOpen}
@@ -348,7 +421,10 @@ export function ChatPage() {
         />
       }
     >
-      <TopBar onMenuClick={() => setMobileSidebarOpen(true)} />
+      <TopBar
+        onMenuClick={() => setMobileSidebarOpen(true)}
+        onExport={canExport ? handleExport : undefined}
+      />
 
       {isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center px-5 sm:px-8 overflow-y-auto">
@@ -443,6 +519,29 @@ export function ChatPage() {
         </div>
       )}
 
+      {(searchStatus || voiceError || speech.isListening) && (
+        <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 pt-3 flex flex-wrap gap-2">
+          {speech.isListening && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 text-red-500 text-xs font-medium border border-red-500/20 animate-fade-in">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              Listening…
+            </div>
+          )}
+          {searchStatus && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-soft text-accent text-xs font-medium border border-accent/20 animate-fade-in">
+              <Globe size={12} className="animate-pulse" />
+              {searchStatus}
+            </div>
+          )}
+          {voiceError && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-medium border border-amber-500/20 animate-fade-in">
+              <MicOff size={12} />
+              {voiceError}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="border-t border-edge bg-canvas/80 backdrop-blur-md">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <div className="relative rounded-2xl border border-edge bg-surface shadow-sm hover:border-accent/30 focus-within:border-accent/60 focus-within:shadow-md transition-all duration-200">
@@ -455,10 +554,26 @@ export function ChatPage() {
                 autoResize();
               }}
               onKeyDown={onKeyDown}
-              placeholder="Message VEYRA..."
+              placeholder={speech.isListening ? 'Listening…' : 'Message VEYRA...'}
               disabled={streaming}
-              className="w-full resize-none bg-transparent px-5 py-4 pr-14 text-sm placeholder:text-muted/70 focus:outline-none disabled:opacity-60 max-h-52"
+              className="w-full resize-none bg-transparent px-5 py-4 pr-24 text-sm placeholder:text-muted/70 focus:outline-none disabled:opacity-60 max-h-52"
             />
+
+            <button
+              type="button"
+              onClick={handleMicClick}
+              disabled={micDisabled}
+              aria-label={speech.isListening ? 'Stop voice input' : 'Start voice input'}
+              title={speech.isListening ? 'Stop voice input' : 'Start voice input'}
+              className={`absolute right-12 bottom-2.5 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+                speech.isListening
+                  ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse'
+                  : 'text-muted hover:text-ink hover:bg-edge/60'
+              }`}
+            >
+              <Mic size={15} />
+            </button>
+
             {streaming ? (
               <button
                 onClick={stop}

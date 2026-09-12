@@ -36,6 +36,10 @@ export async function chatStream(req: AuthedRequest, res: Response) {
       if (clientClosed) return;
       res.end();
     },
+    onStatus: (status) => {
+      if (clientClosed) return;
+      res.write(`\n[[STATUS:${status}]]\n`);
+    },
     onError: (err) => {
       console.error('[chat] stream error:', err.message);
       if (clientClosed) return;

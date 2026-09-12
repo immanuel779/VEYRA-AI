@@ -13,4 +13,5 @@ export const chatBodySchema = z.object({
     )
     .min(1)
     .max(MAX_MESSAGES),
+  webSearch: z.boolean().optional(),
 });
