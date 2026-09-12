@@ -36,6 +36,8 @@ interface ChatMessage {
   createdAt?: Date | null;
 }
 
+const MAX_INPUT_CHARS = 20000;
+
 const suggestions = [
   { icon: Code2, title: 'Explain React simply', hint: 'Start with components and props' },
   { icon: Lightbulb, title: 'Help me plan a business', hint: 'From idea to first customer' },
@@ -83,13 +85,13 @@ export function ChatPage() {
   const voiceBaseRef = useRef<string>('');
 
   const speech = useSpeechRecognition({
-    onTranscript: (text, isFinal) => {
-      if (isFinal) {
-        voiceBaseRef.current = (voiceBaseRef.current + ' ' + text).trim() + ' ';
-        setInput(voiceBaseRef.current);
-      } else {
-        setInput(voiceBaseRef.current + text);
-      }
+    onTranscript: (transcript) => {
+      const base = voiceBaseRef.current;
+      const combined = (base ? base + transcript : transcript).slice(
+        0,
+        MAX_INPUT_CHARS
+      );
+      setInput(combined);
       requestAnimationFrame(() => autoResize());
     },
     onError: (err) => {
@@ -194,7 +196,10 @@ export function ChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const recentHistory = history.slice(-30);
+    const recentHistory = history.slice(-30).map((m) => ({
+      role: m.role,
+      content: m.content.slice(0, MAX_INPUT_CHARS),
+    }));
 
     let acc = '';
     try {
@@ -202,7 +207,7 @@ export function ChatPage() {
       if (!token) throw new Error('Not authenticated');
 
       await streamChat({
-        messages: recentHistory.map((m) => ({ role: m.role, content: m.content })),
+        messages: recentHistory,
         token,
         signal: controller.signal,
         webSearch: prefs.webSearch,
@@ -396,6 +401,7 @@ export function ChatPage() {
 
   const micDisabled = streaming;
   const canExport = !!activeId && messages.length > 0 && !streaming;
+  const showCounter = input.length > MAX_INPUT_CHARS * 0.8;
 
   return (
     <AppLayout
@@ -550,12 +556,13 @@ export function ChatPage() {
               rows={1}
               value={input}
               onChange={(e) => {
-                setInput(e.target.value);
+                setInput(e.target.value.slice(0, MAX_INPUT_CHARS));
                 autoResize();
               }}
               onKeyDown={onKeyDown}
               placeholder={speech.isListening ? 'Listening…' : 'Message VEYRA...'}
               disabled={streaming}
+              maxLength={MAX_INPUT_CHARS}
               className="w-full resize-none bg-transparent px-5 py-4 pr-24 text-sm placeholder:text-muted/70 focus:outline-none disabled:opacity-60 max-h-52"
             />
 
@@ -593,9 +600,22 @@ export function ChatPage() {
               </button>
             )}
           </div>
-          <p className="text-[11px] text-muted/70 text-center mt-3">
-            VEYRA can make mistakes. Verify important information.
-          </p>
+          <div className="flex items-center justify-center mt-3 gap-3">
+            {showCounter && (
+              <span
+                className={`text-[11px] tabular-nums ${
+                  input.length >= MAX_INPUT_CHARS
+                    ? 'text-red-500'
+                    : 'text-muted/70'
+                }`}
+              >
+                {input.length.toLocaleString()} / {MAX_INPUT_CHARS.toLocaleString()}
+              </span>
+            )}
+            <p className="text-[11px] text-muted/70 text-center">
+              VEYRA can make mistakes. Verify important information.
+            </p>
+          </div>
         </div>
       </div>
     </AppLayout>
