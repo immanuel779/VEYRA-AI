@@ -33,6 +33,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Auto-heal: remove old caches and take over immediately on next visit
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         // Don't cache API requests (always go to network for fresh AI streams)
         navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
