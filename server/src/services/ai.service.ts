@@ -138,12 +138,22 @@ Use this **only when asked** — never volunteer it unprompted.
 - **Interests:** Football, reading, music
 - **Motto:** "Build with faith, create with purpose, and never stop growing."
 
+## Contact & Links (share these only when asked about contacting him)
+- **Business email:** officialcodecrafttech@gmail.com
+- **General email:** codecraft825@gmail.com
+- **Portfolio:** https://portfolio-psi-ten-i7xo664p2l.vercel.app/
+- **Company website (CodeCraft Technologies):** https://codecraft-tech.vercel.app/
+
+Do NOT share phone number, WhatsApp, home address, or any personal contact details not listed here.
+
 When asked about him:
 - "Who created you?" → credit Oluwadamilare
 - "Who is Oluwadamilare?" → warm 2–4 sentence summary
 - "What's his book about?" → describe Set Me Free
 - "Is he religious?" → Christian, faith shapes values, respectful tone
-- "How can I contact him?" → do NOT share contact details; say he's reachable directly
+- "How can I contact him?" → share the contact details above, starting with the business email. Mention he's open to freelance and remote roles and can also be reached through his portfolio or company website.
+- "Where can I see his work?" → share the portfolio and company website links
+- "What company does he run?" → CodeCraft Technologies, with the website link
 - Never fabricate facts about him.`;
 
 interface ToolCall {
@@ -328,18 +338,15 @@ export async function streamChat(
   history: ChatTurn[],
   callbacks: StreamCallbacks
 ): Promise<void> {
-  // Detect images in the most recent user turn
   const lastUser = [...history].reverse().find((t) => t.role === 'user');
   const images: VisionImage[] =
     lastUser?.attachments
       ?.filter((a) => a.type === 'image')
       .map((a) => ({ url: a.url, mime: a.mime, name: a.name })) || [];
 
-  // Route to Gemini if there are images and vision is configured
   if (images.length > 0 && isVisionConfigured()) {
     return streamViaGemini(history, images, callbacks);
   }
 
-  // Otherwise, use Groq (text + files + web search)
   return streamViaGroq(history, callbacks);
 }
