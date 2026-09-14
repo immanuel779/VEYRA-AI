@@ -10,6 +10,10 @@ import {
   isVisionConfigured,
   type VisionImage,
 } from './vision.service';
+import {
+  streamCodingResponse,
+  isOpenRouterConfigured,
+} from './openrouter.service';
 
 const groq = new Groq({ apiKey: env.GROQ_API_KEY });
 const MODEL = 'openai/gpt-oss-120b';
@@ -71,6 +75,16 @@ For simple questions — greetings, quick facts, casual chat — skip this proce
 - **Use Markdown when it helps** (code, lists, tables, bold for emphasis). Skip it when plain text is cleaner.
 - **Code** always goes in fenced blocks with a language tag.
 - **No filler.** Skip phrases like "as an AI", "it's important to note", "I hope this helps", "let me know if you need anything else".
+
+# CODING MODE (when active)
+When you're writing, reviewing, or debugging code, follow these extra rules:
+- **Think through the logic** before writing a single line. Trace the inputs and outputs.
+- **Write complete, runnable code** — no placeholders, no "// add logic here".
+- **Handle edge cases explicitly** — null, empty, out of bounds, network failure.
+- **Point out bugs in the user's code** directly and clearly. Show the fix.
+- **Explain briefly** why the fix works — but don't lecture.
+- **Prefer clarity over cleverness.** Readable code beats one-liners.
+- **Security matters.** Flag injection, auth bypass, exposed secrets, XSS, etc.
 
 # EXAMPLES OF GOOD ANSWERS
 
@@ -334,11 +348,53 @@ async function streamViaGroq(
   }
 }
 
+/**
+ * Detect whether a message is likely a coding/debugging question.
+ * Conservative — only fires on clear signals to avoid slowing down
+ * normal chat with an unnecessary OpenRouter round-trip.
+ */
+function isCodingQuestion(message: string): boolean {
+  if (!message) return false;
+  const text = message.toLowerCase();
+
+  // Strong signals — these alone are enough
+  const strongSignals = [
+    '```',
+    'debug',
+    'refactor',
+    'stack trace',
+    'traceback',
+    'compile error',
+    'syntax error',
+    'segmentation fault',
+  ];
+  if (strongSignals.some((s) => text.includes(s))) return true;
+
+  // Medium signals — need at least one alongside a language or problem word
+  const languages = [
+    'javascript', 'typescript', 'python', 'react', 'node', 'java',
+    'c++', 'c#', 'rust', 'go', 'php', 'ruby', 'kotlin', 'swift',
+    'sql', 'html', 'css', 'tailwind', 'vue', 'angular', 'express',
+  ];
+  const problemWords = [
+    'error', 'bug', 'fix', 'function', 'code', 'program', 'api',
+    'algorithm', 'loop', 'class', 'variable', 'undefined', 'null',
+    'crash', 'fail', 'issue', 'why is my', 'how do i write',
+  ];
+
+  const hasLanguage = languages.some((l) => text.includes(l));
+  const hasProblem = problemWords.some((p) => text.includes(p));
+
+  return hasLanguage && hasProblem;
+}
+
 export async function streamChat(
   history: ChatTurn[],
   callbacks: StreamCallbacks
 ): Promise<void> {
   const lastUser = [...history].reverse().find((t) => t.role === 'user');
+
+  // ─── 1. Route to Gemini for images ───
   const images: VisionImage[] =
     lastUser?.attachments
       ?.filter((a) => a.type === 'image')
@@ -348,5 +404,28 @@ export async function streamChat(
     return streamViaGemini(history, images, callbacks);
   }
 
+  // ─── 2. Route coding/debugging to OpenRouter ───
+  const lastMessageText = lastUser?.content || '';
+  if (
+    lastMessageText &&
+    isOpenRouterConfigured() &&
+    isCodingQuestion(lastMessageText)
+  ) {
+    const historyForOR = history.map((m) => ({
+      role: m.role,
+      content: inlineFileText(m),
+    }));
+
+    const success = await streamCodingResponse(
+      SYSTEM_PROMPT,
+      historyForOR,
+      callbacks
+    );
+
+    if (success) return;
+    // else: fall through to Groq below
+  }
+
+  // ─── 3. Default to Groq ───
   return streamViaGroq(history, callbacks);
 }

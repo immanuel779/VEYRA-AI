@@ -9,6 +9,7 @@ export const env = {
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   TAVILY_API_KEY: process.env.TAVILY_API_KEY || '',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
   RATE_LIMIT_GENERAL: Number(process.env.RATE_LIMIT_GENERAL) || 120,
   RATE_LIMIT_CHAT: Number(process.env.RATE_LIMIT_CHAT) || 20,
 } as const;
@@ -21,4 +22,7 @@ if (!env.TAVILY_API_KEY) {
 }
 if (!env.GEMINI_API_KEY) {
   console.warn('[env] Missing GEMINI_API_KEY. Image understanding will be disabled.');
+}
+if (!env.OPENROUTER_API_KEY) {
+  console.warn('[env] Missing OPENROUTER_API_KEY. Coding mode will fall back to Groq.');
 }
