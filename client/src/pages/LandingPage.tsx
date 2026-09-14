@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   ArrowRight, MessageSquare, Code2, Image as ImageIcon, FileText,
   Globe, Mic, Sparkles, Check, Menu, X,
